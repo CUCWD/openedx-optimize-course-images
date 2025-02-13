@@ -120,7 +120,7 @@ def main():
 
             # After extraction, traverse image files in the static folder
             course_path = os.path.join(tar_destination, "course")
-            # traverse_image_files(course_path)
+            traverse_image_files(course_path)
 
             # Replace contentType 'image/png' within the assets.json file to 'image/jpeg'.
             # Replace thumbnail_location 'file-png.jpg' with 'file.jpg' within the assets.json file.
