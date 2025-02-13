@@ -124,3 +124,35 @@ def find_json_file(root_dir, filename):
             if file == filename:
                 return os.path.join(dirpath, file)
     return None
+
+def find_parent_key(json_file_path, target_value):
+    """
+    Finds the parent key of a specific value within a JSON file.
+
+    Args:
+        json_file_path (str): The path to the JSON file.
+        target_value: The value to search for.
+
+    Returns:
+        str: The parent key of the target value, or None if not found.
+    """
+    with open(json_file_path, 'r') as file:
+        data = json.load(file)
+
+    def _recursive_search(data, target_value):
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if value == target_value:
+                    return key
+                elif isinstance(value, (dict, list)):
+                  result = _recursive_search(value, target_value)
+                  if result:
+                    return key
+        elif isinstance(data, list):
+            for item in data:
+                result = _recursive_search(item, target_value)
+                if result:
+                    return result 
+        return None
+
+    return _recursive_search(data, target_value)
