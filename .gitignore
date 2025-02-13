@@ -3,6 +3,7 @@
 ### Optimized Course Images Script
 /optimized-courses
 /ready-to-be-optimized-courses
+/tmp
 
 ### Python artifacts
 *.pyc
