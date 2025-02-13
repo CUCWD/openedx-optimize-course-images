@@ -1,0 +1,63 @@
+# .gitignore for openedx-optimize-course-images
+
+### Optimized Course Images Script
+/optimized-courses
+/ready-to-be-optimized-courses
+
+### Python artifacts
+*.pyc
+
+### Editor and IDE artifacts
+*~
+*.swp
+*.orig
+/nbproject
+.idea/
+.redcar/
+codekit-config.json
+.pycharm_helpers/
+/_mac/*
+/IntelliLang.xml
+/conda_packages.xml
+/databaseSettings.xml
+/diff.xml
+/debugger.xml
+/editor.xml
+/ide.general.xml
+/inspection/Default.xml
+/other.xml
+/packages.xml
+/web-browsers.xml
+
+### NFS artifacts
+.nfs*
+
+### OS X artifacts
+*.DS_Store
+.AppleDouble
+:2e_*
+:2e#
+
+### Logging artifacts
+log/
+logs
+chromedriver.log
+ghostdriver.log
+
+### Unknown artifacts
+database.sqlite
+courseware/static/js/mathjax/*
+flushdb.sh
+build
+/src/
+\#*\#
+.env/
+openedx/core/djangoapps/django_comment_common/comment_client/python
+autodeploy.properties
+.ws_migrations_complete
+dist
+*.bak
+
+# Visual Studio Code
+.vscode
+
