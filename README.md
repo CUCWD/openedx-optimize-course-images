@@ -1,2 +1,2 @@
-# optimize-openedx-course-images
+# openedx-optimize-course-images
 Optimize Open edX export course images by replacing existing (JPEG, PNG) formats with compressed versions.
