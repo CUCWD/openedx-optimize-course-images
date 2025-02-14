@@ -46,6 +46,16 @@ def traverse_image_files(directory_path):
                 logging.info(f"Found image file ({uih.get_image_stats(image_path)}): {image_path}")
 
                 try:
+                    # Ensure that file use their `/policies/assets.json` key name when searching the
+                    # course. Example on disk with '/static/iguana-8084900@5257x3505.jpg' including
+                    # the '@' character is the displayName property in the assets.json file, while
+                    # the key name replaces the '@' to '_' and the named used within the course
+                    # content is 'iguana-8084900_5257x3505.jpg' instead.
+                    file = ujh.find_parent_key(
+                        os.path.join(directory_path, "policies", "assets.json"),
+                        file
+                    )
+
                     found_image_usage_in_course = ufh.search_image_in_files(file, directory_path)
                     if found_image_usage_in_course:
                         # Convert all supported extensions to JPEG type and compress.
@@ -107,6 +117,8 @@ def main():
             # Set up logging for the specific tar file
             log_file = os.path.join(log_path, f"{tar_file_name}.log")
             setup_logger(log_file)
+            logging.info("//////////////////////////////////////////////////////////////")
+            logging.info(f"Starting new image optimization for {tar_file_name}")
 
             # Create a copy of the tar file with the .gz extension removed
             tar_file_copy = os.path.join(tmp_destination, tar_file_name + ".tar")
