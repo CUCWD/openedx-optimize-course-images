@@ -40,6 +40,13 @@ Select the command to run:
 Enter the number of the command to run:
 ``` 
 
+Update the `process-course-ids.txt` file to include courses from this MySQL command. Course Overviews may include course that were previously deleted from the MongoDB store.
+
+Only courses in this txt file will be run for exporting, optimizing, and importing steps.
+```
+select distinct id from openedx.course_overviews_courseoverview order by id asc;
+```
+
 ## Option 1: Export Open edX courses and backup to S3.
 
 Create Open edX exported course TAR GZIP (tag.gz) files with specific naming convention per course. Make sure to perform the rename of tar.gz files in the `source-courses` directory prior to running the script. Copy multiple exported course tar.gz files to the `source-courses` directory then run the script using this command. 

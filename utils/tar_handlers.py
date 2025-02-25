@@ -6,7 +6,7 @@ import logging
 import os
 import tarfile
 
-from utils import file_handlers as ufh
+from utils import file_handlers as utils_file
 
 def create_tar_gz(source_dir, destination_dir, archive_name):
     """
@@ -31,7 +31,7 @@ def extract_tar_gz(source_path, destination_path):
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source file {source_path} not found.")
 
-        ufh.clear_destination(destination_path)
+        utils_file.clear_destination(destination_path)
 
         with tarfile.open(source_path, "r") as tar:
             tar.extractall(path=destination_path)
