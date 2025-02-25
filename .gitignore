@@ -1,7 +1,7 @@
 # .gitignore for openedx-optimize-course-images
 
 ### Optimized Course Images Script
-/optimized-courses
+/courses-optimized
 /ready-to-be-optimized-courses
 /tmp
 

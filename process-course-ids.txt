@@ -1,0 +1,2 @@
+course-v1:edX+DemoX+Demo_Course
+course-v1:ORG+DOESNT+EXIST

@@ -29,9 +29,30 @@ pip install -r requirements.txt
 ```
 
 # Running
-Make sure to perform the rename of tar.gz files in the `source-courses` directory prior to running the script. Copy multiple exported course tar.gz files to the `source-courses` directory then run the script using this command. 
+The application will provide input options to execute partial or complete course optimization. Make sure to run this on your production server that uses `tutor` configuration as the *export/import* functionality uses this command to perform these operations.
+```
+Select the command to run:
+0. Quit application.
+1. Export Open edX courses and backup to S3.
+2. Optimize images for exported tar gzip Open edX courses.
+3. Import optimized Open edX courses back to the platform.
+4. (Run steps 1 - 3) Export, optimize images, and import back to the platform.
+Enter the number of the command to run:
+``` 
 
-## Rename Exported Course TAR GZIP (tag.gz) Files With Specific Naming Convention
+Update the `process-course-ids.txt` file to include courses from this MySQL command. Course Overviews may include course that were previously deleted from the MongoDB store.
+
+Only courses in this txt file will be run for exporting, optimizing, and importing steps.
+```
+select distinct id from openedx.course_overviews_courseoverview order by id asc;
+```
+
+## Option 1: Export Open edX courses and backup to S3.
+
+Create Open edX exported course TAR GZIP (tag.gz) files with specific naming convention per course. Make sure to perform the rename of tar.gz files in the `source-courses` directory prior to running the script. Copy multiple exported course tar.gz files to the `source-courses` directory then run the script using this command. 
+
+**This is handled automatically for you when you run `Step 1: Export Open edX courses and backup to S3.` option.**
+
 Ensure that you include the `course_id` Open edX naming convention in the tar.gz file names to ensure that they are named uniquely. This helps the script keep track of log, modification to course content, and final optimized tar.gz file output on a per course basis.
 
 Here are some examples following the (Organization+CourseNumber+CourseRun) format.
@@ -39,7 +60,10 @@ Here are some examples following the (Organization+CourseNumber+CourseRun) forma
   - course.edX+DemoX+Demo_Course.tar.gz
   - course.Org+CourseNumber+CourseRun.tar.gz
 
-## Imagick will perform the following convertion for all `/static` (JPEG, PNG) content.
+## Option 2: Optimize images for exported tar gzip Open edX courses.
+
+Imagick will perform the following convertion for all `/static` (JPEG, PNG) content.
+
 After each Imagick option, there is a link to the command line version for additional information.
 - Strip metadata | [--strip](https://imagemagick.org/script/command-line-options.php?#strip)
 - Set interlace mode to Plane (for progressive JPEGs) | [-interlace Plane](https://imagemagick.org/script/command-line-options.php?#interlace)
@@ -55,6 +79,12 @@ After each Imagick option, there is a link to the command line version for addit
     - The script does not upscale these images to 1400px width. This is to ensure that the images like drag and drop are preserved to avoid issues with target zones moving.
 - Convert all images to JPEG format | [-format jpeg](https://imagemagick.org/script/command-line-options.php?#format)
 - Define JPEG DCT method as float for better quality | [-define jpeg:dct-method=float](https://imagemagick.org/script/command-line-options.php?#define)
+
+## Option 3: Import optimized Open edX courses back to the platform.
+TBD
+
+## Option 4: (Run steps 1 - 3) Export, optimize images, and import back to the platform.
+TBD
 
 ## Execute Script To Optimized Course Images
 ```
