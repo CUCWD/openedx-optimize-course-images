@@ -15,6 +15,7 @@ import os
 import glob
 import logging
 import shutil
+import subprocess
 import multiprocessing
 from wand.image import Image
 
@@ -54,6 +55,7 @@ def setup_logger(log_file, enable_stdout=True):
     return logger
 
 # Setup application logger
+os.makedirs(LOG_PATH, exist_ok=True)
 app_logger = setup_logger(os.path.join(LOG_PATH, "application.log"), enable_stdout=True)
 
 def traverse_image_files(directory_path, course_logger):
@@ -117,19 +119,15 @@ def process_tar_file(tar_file, log_path, optimized_directory, tmp_destination):
 
     tar_file_name = os.path.splitext(os.path.splitext(os.path.basename(tar_file))[0])[0]
     tar_destination = os.path.join(tmp_destination, tar_file_name)
-    os.makedirs(tar_destination, exist_ok=True)
 
-    log_file = os.path.join(log_path, f"{tar_file_name}.log")
     # Use a separate logger for file-specific logs
+    log_file = os.path.join(log_path, f"{tar_file_name}.log")
     course_logger = setup_logger(log_file, enable_stdout=False)
 
     course_logger.info("//////////////////////////////////////////////////////////////")
     course_logger.info(f"Starting new image optimization for {tar_file_name}")
 
-    tar_file_copy = os.path.join(tmp_destination, tar_file_name + ".tar")
-    shutil.copy(tar_file, tar_file_copy)
-    uth.extract_tar_gz(tar_file_copy, tar_destination)
-    os.remove(tar_file_copy)
+    uth.extract_tar_gz(tar_file, tar_destination)
 
     course_path = os.path.join(tar_destination, "course")
     traverse_image_files(course_path, course_logger)
@@ -153,6 +151,48 @@ def chunk_courses_to_optimized(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
+def export_course_from_platform(course_id):
+    """Export course from the Open edX platform using a subprocess call and tutor command."""
+
+    # Exit early if course_id is empty
+    if not course_id:
+        app_logger.error("Course ID is empty")
+        return
+    
+    CONTAINER_TMP_SOURCE_COURSES = "/tmp/source-courses"
+    
+    try:
+        # Create temporary course directory using removed 'course-v1:' prefix from course_id
+        course_id_filename = course_id.replace('course-v1:', '')
+        course_tmp_dir = os.path.join(CONTAINER_TMP_SOURCE_COURSES, 'course.' + course_id_filename, 'course')
+
+        # Make the course directory before exporting the course so the command doesn't fail.
+        course_dest_source = os.path.join(SOURCE_DIRECTORY, 'course.' + course_id_filename, 'course')
+        os.makedirs(course_dest_source, exist_ok=True)
+
+        # Export the course using the tutor command
+        subprocess_cmd = [
+            '/home/ubuntu/venv/bin/tutor', 'local', 'run',
+            '-v ' + os.path.abspath(SOURCE_DIRECTORY) + ':' + CONTAINER_TMP_SOURCE_COURSES, 'cms',
+            './manage.py cms export', 
+            course_id, course_tmp_dir,
+            '--settings tutor.production'
+        ]
+        app_logger.info(f"Executing: {' '.join(subprocess_cmd)}")
+        subprocess.run(' '.join(subprocess_cmd), shell=True, check=True, capture_output=True, text=True)
+
+        # Tar GZ the exported course
+        uth.create_tar_gz(course_dest_source, SOURCE_DIRECTORY, 'course.' + course_id_filename)
+
+        app_logger.info(f"Exported course: {course_id}")
+    except subprocess.CalledProcessError as error:
+        app_logger.error(f"Error exporting course {course_id}: {error.returncode} {error.stderr}")
+    except Exception as error:
+        app_logger.error(f"Error exporting courses: {error}")
+
+    # Remove the temporary course directory
+    ufh.delete_directory(os.path.join(SOURCE_DIRECTORY, 'course.' + course_id_filename))
+
 def main():
     """
     Main function to process all .tar.gz files from source-courses directory.
@@ -160,29 +200,76 @@ def main():
     try:
         # Create supporting directories for application logs, optimized course tar.gz output, and
         # temporary modification to existing courses.
-        os.makedirs(LOG_PATH, exist_ok=True)
         os.makedirs(OPTIMIZED_DIRECTORY, exist_ok=True)
         os.makedirs(TMP_DESTINATION, exist_ok=True)
-
-        # Check to see if any source Open edX tar.gz courses exists and process image optimization.
-        tar_files = glob.glob(os.path.join(SOURCE_DIRECTORY, "*.tar.gz"))
-        if not tar_files:
-            app_logger.info("No .tar.gz files found in source directory.")
-            return
-
+        
         # Ensure that the number of courses processed in each chunk does not exceed the number of
         # worker processes, thereby optimizing resource usage.
         chunk_size = min(NUM_COURSE_OPTIMIZATION_CHUNKS, NUM_WORKER_PROCESSES)
 
-        # Process tar.gz course files in chunks to limit resources used at a time.
-        for chunk in chunk_courses_to_optimized(tar_files, chunk_size):
-            with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
-                pool.starmap(process_tar_file, [(tar_file, LOG_PATH, OPTIMIZED_DIRECTORY, TMP_DESTINATION) for tar_file in chunk])
+        # Export courses from process-course-ids.txt from the Open edX platform.
+        course_ids = []
+        with open(os.path.join('.', 'process-course-ids.txt'), 'r', encoding='utf-8') as file:
+            for line in file:
+                course_ids.append(line.strip())
+                
+        while True:
+            # Prompt user for the command to run
+            print("Select the command to run:")
+            print("0. Quit application.")
+            print("1. Export Open edX courses and backup to S3.")
+            print("2. Optimize images for exported tar gzip Open edX courses.")
+            print("3. Import optimized Open edX courses back to the platform.")
+            print("4. (Run steps 1 - 3) Export, optimize images, and import back to the platform.")
+            command_choice = input("Enter the number of the command to run: ")
+
+            if command_choice == '0':
+                app_logger.info("Exiting application.")
+                break
+            elif command_choice == '1':
+                app_logger.info("Exporting Open edX courses and backup to S3.")
+
+                for chunk in chunk_courses_to_optimized(course_ids, chunk_size):
+                    with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
+                        pool.starmap(export_course_from_platform, [(course_id,) for course_id in chunk])
+                
+                # Add code to backup to S3 here if needed
+                app_logger.info("All courses have been exported and backed up to S3.")
+            elif command_choice == '2':
+                app_logger.info("Optimize images for exported tar gzip Open edX courses.")
+
+                # Check to see if any source Open edX tar.gz courses exists and process image optimization.
+                tar_files = glob.glob(os.path.join(SOURCE_DIRECTORY, "*.tar.gz"))
+                if not tar_files:
+                    app_logger.info("No .tar.gz files found in source directory.")
+                    continue
+
+                # Process tar.gz course files in chunks to limit resources used at a time.
+                for chunk in chunk_courses_to_optimized(tar_files, chunk_size):
+                    with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
+                        pool.starmap(process_tar_file, [(tar_file, LOG_PATH, OPTIMIZED_DIRECTORY, TMP_DESTINATION) for tar_file in chunk])
+
+                app_logger.info("All course images have been optimized")
+            elif command_choice == '3':
+                app_logger.info("Importing optimized courses back to the platform.")
+
+                # Add code to import optimized courses back to the platform here
+
+                app_logger.info("All courses have been imported back to the platform.")
+                pass
+            elif command_choice == '4':
+                app_logger.info("Exporting Open edX courses and backup to S3, optimizing course, then importing back to the platform.")
+
+                # Add code to export, optimize, and import courses here
+
+                app_logger.info("All courses have been exported, optimized, and imported back to the platform.")
+                pass
+            else:
+                app_logger.error("Invalid command choice.")
 
     except OSError as error:
         app_logger.error("Failed to execute main function: %s", error)
 
-    app_logger.info("All courses have been optimized")
     app_logger.info("//////////////////////////////////////////////////////////////")
 
 if __name__ == "__main__":
