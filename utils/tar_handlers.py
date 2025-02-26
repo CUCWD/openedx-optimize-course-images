@@ -21,17 +21,23 @@ def create_tar_gz(source_dir, destination_dir, archive_name):
     archive_path = os.path.join(destination_dir, archive_name + ".tar.gz")
     with tarfile.open(archive_path, "w:gz") as tar:
         tar.add(source_dir, arcname=os.path.basename(source_dir))
-        logging.info(f"Created TGZ optimized course at {archive_path}")
+        logging.info(f"Created TGZ course at {archive_path}")
 
-def extract_tar_gz(source_path, destination_path):
+def extract_tar_gz(source_path, destination_path, ignore_clear=False):
     """
-    Extracts the given .tar file to the specified destination path after clearing it.
+    Extracts the given .tar file to the specified destination path.
+
+    Args:
+        source_path (str): Path to the .tar file to be extracted.
+        destination_path (str): Path to the directory where the contents will be extracted.
+        ignore_clear (bool): If True, the destination directory will not be cleared before extraction.
     """
     try:
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source file {source_path} not found.")
 
-        utils_file.clear_destination(destination_path)
+        if not ignore_clear:
+            utils_file.clear_destination(destination_path)
 
         with tarfile.open(source_path, "r") as tar:
             tar.extractall(path=destination_path)

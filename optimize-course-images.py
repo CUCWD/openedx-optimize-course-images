@@ -166,7 +166,7 @@ def export_course_from_platform(course_id):
         app_logger.error("Course ID is empty")
         return
     
-    CONTAINER_TMP_SOURCE_COURSES = "/tmp/source-courses"
+    CONTAINER_TMP_SOURCE_COURSES = "/tmp/courses-sourced"
     
     try:
         # Create temporary course directory using removed 'course-v1:' prefix from course_id
@@ -199,6 +199,49 @@ def export_course_from_platform(course_id):
 
     # Remove the temporary course directory
     utils_file.delete_directory(os.path.join(SOURCE_DIRECTORY, 'course.' + course_id_filename))
+
+def import_course_to_platform(course_id):
+    """Import course to the Open edX platform using a subprocess call and tutor command."""
+    # Exit early if course_id is empty
+    if not course_id:
+        app_logger.error("Course ID is empty")
+        return
+    
+    CONTAINER_TMP_OPTIMIZED_COURSES = "/tmp/courses-optimized"
+
+    try:
+        # Extract the tar.gz file to a temporary directory before importing the course.
+        course_id_filename = course_id.replace('course-v1:', '')
+        optimized_tar_gz_path = os.path.join(OPTIMIZED_DIRECTORY, 'course.' + course_id_filename + '-optimized.tar.gz')
+        utils_tar.extract_tar_gz(optimized_tar_gz_path, OPTIMIZED_DIRECTORY, ignore_clear=True)
+
+        # Import the course using the tutor command
+        subprocess_cmd = [
+            '/home/ubuntu/venv/bin/tutor', 'local', 'run',
+            '-v ' + os.path.abspath(OPTIMIZED_DIRECTORY) + ':' + CONTAINER_TMP_OPTIMIZED_COURSES,
+            'cms', './manage.py cms import', '/openedx/data',
+            os.path.join(CONTAINER_TMP_OPTIMIZED_COURSES, f'course.{course_id_filename}', 'course'),
+            '--settings', 'tutor.production'
+        ]
+        app_logger.info(f"Executing: {' '.join(subprocess_cmd)}")
+        subprocess.run(
+            ' '.join(subprocess_cmd), shell=True, check=True, capture_output=True, text=True
+        )
+        app_logger.info(f"Imported course: {course_id}")
+    except subprocess.CalledProcessError as error:
+        app_logger.error(f"Error importing course {course_id}: {error.returncode} {error.stderr}")
+    except Exception as error:
+        app_logger.error(f"Error importing courses: {error}")
+
+    # Remove the temporary course directory and tar.gz file
+    utils_file.delete_directory(os.path.join(OPTIMIZED_DIRECTORY, 'course.' + course_id_filename))
+
+    # Remove OPTIMIZED_DIRECTORY tar.gz course file after optimization files have been uploaded.
+    try:
+        os.remove(optimized_tar_gz_path)
+        app_logger.info(f"Removed optimized course file: {optimized_tar_gz_path}")
+    except FileNotFoundError: # pylint: disable=broad-except
+        app_logger.warning(f"Optimized course file not found: {optimized_tar_gz_path}")
 
 def main():
     """
@@ -290,21 +333,16 @@ def main():
                     except FileNotFoundError: # pylint: disable=broad-except
                         app_logger.warning(f"[{command_choice}] Source course file not found: {src_tar_gz_path}")
 
-                    # Remove OPTIMIZED_DIRECTORY tar.gz course file after optimization files have been uploaded.
-                    try:
-                        os.remove(optimized_tar_gz_path)
-                        app_logger.info(f"[{command_choice}] Removed optimized course file: {optimized_tar_gz_path}")
-                    except FileNotFoundError: # pylint: disable=broad-except
-                        app_logger.warning(f"[{command_choice}] Optimized course file not found: {optimized_tar_gz_path}")
-
                 app_logger.info(f"[{command_choice}] All course images have been optimized")
             elif command_choice == '3':
-                app_logger.info(f"//////// Step [{command_choice}] Importing optimized courses back to the platform.")
+                app_logger.info(f"//////// Step [{command_choice}] Import optimized Open edX courses back to the platform.")
 
-                # Add code to import optimized courses back to the platform here
+                # Import the optimized courses back to the Open edX platform using a subprocess call and tutor command.
+                for chunk in chunk_courses_to_optimized(course_ids, chunk_size):
+                    with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
+                        pool.starmap(import_course_to_platform, [(course_id,) for course_id in chunk])
 
                 app_logger.info(f"[{command_choice}] All courses have been imported back to the platform.")
-                pass
             elif command_choice == '4':
                 app_logger.info(f"//////// Step [{command_choice}] Exporting Open edX courses and backup to S3, optimizing course, then importing back to the platform.")
 
