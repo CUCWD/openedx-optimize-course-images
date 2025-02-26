@@ -40,6 +40,7 @@ Select the command to run:
 Enter the number of the command to run:
 ``` 
 
+## Add course_ids to run
 Update the `process-course-ids.txt` file to include courses from this MySQL command. Course Overviews may include course that were previously deleted from the MongoDB store.
 
 Only courses in this txt file will be run for exporting, optimizing, and importing steps.
@@ -47,20 +48,35 @@ Only courses in this txt file will be run for exporting, optimizing, and importi
 select distinct id from openedx.course_overviews_courseoverview order by id asc;
 ```
 
+## Configure Boto3 S3 Configuration
+Need to set up the following `settings.py` configuration to connect to an existing S3 bucket. This will be used on options 1 and 2. These key/secret are generated and tied to an existing IAM user account.
+```
+AWS_ACCESS_KEY_ID = 'SET_ME_PLEASE'
+AWS_SECRET_ACCESS_KEY = 'SET_ME_PLEASE'
+AWS_S3_USE_SSL = True
+S3_BUCKET_NAME = 'SET_ME_PLEASE'
+S3_REGION_NAME = 'SET_ME_PLEASE'
+```
+
 ## Option 1: Export Open edX courses and backup to S3.
 
-Create Open edX exported course TAR GZIP (tag.gz) files with specific naming convention per course. Make sure to perform the rename of tar.gz files in the `source-courses` directory prior to running the script. Copy multiple exported course tar.gz files to the `source-courses` directory then run the script using this command. 
+Creates Open edX exported course TAR GZIP (tar.gz) files with specific naming convention per course using the built in `tutor` call to the CMS `./manage.py cms export` Django management command. Make sure to perform the rename of tar.gz files in the `courses-sourced` directory prior to running the script. Copy multiple exported course tar.gz files to the `courses-sourced` directory then run the script using this command. 
 
-**This is handled automatically for you when you run `Step 1: Export Open edX courses and backup to S3.` option.**
+**This is handled automatically for you when you run `Option 1: Export Open edX courses and backup to S3.` option.**
 
 Ensure that you include the `course_id` Open edX naming convention in the tar.gz file names to ensure that they are named uniquely. This helps the script keep track of log, modification to course content, and final optimized tar.gz file output on a per course basis.
 
 Here are some examples following the (Organization+CourseNumber+CourseRun) format.
-- ./source-courses
+- ./courses-sourced
   - course.edX+DemoX+Demo_Course.tar.gz
   - course.Org+CourseNumber+CourseRun.tar.gz
 
 ## Option 2: Optimize images for exported tar gzip Open edX courses.
+
+> **CAUTION**
+> Make sure that there are TAR GZIP (tar.gz) Open edX course files in the ./courses-sourced directory before running this step.
+>
+> Even though `Option 1: Export Open edX courses and backup to S3` will backup the original exported copy, this step requires that there is a local copy before running.
 
 Imagick will perform the following convertion for all `/static` (JPEG, PNG) content.
 
@@ -81,7 +97,18 @@ After each Imagick option, there is a link to the command line version for addit
 - Define JPEG DCT method as float for better quality | [-define jpeg:dct-method=float](https://imagemagick.org/script/command-line-options.php?#define)
 
 ## Option 3: Import optimized Open edX courses back to the platform.
-TBD
+
+> **CAUTION**
+> Make sure that there are optimized TAR GZIP (tar.gz) Open edX course files in the ./courses-optimized directory before running this step. This is ideal because otherwise you might be importing a course that has no images optimized.
+>
+> Even though `Option 2: Optimize images for exported tar gzip Open edX courses` will backup the optimized course copy, this step requires that there is a local copy before running.
+
+This will use the Open edX TAR GZIP (tar.gz) course files located in the `courses-optimized` directory that have already gone through `Step 2: Optimize images for exported tar gzip Open edX courses.`. This option executes the built in `tutor` call to the CMS `./manage.py cms import` Django management command and reload the updated course onto the platform.
+
+Here are some examples following the (Organization+CourseNumber+CourseRun) format. The courses should have `-optimized.tar.gz` extension after having run through the Imagick image optimization step.
+- ./courses-optimized
+  - course.edX+DemoX+Demo_Course-optimized.tar.gz
+  - course.Org+CourseNumber+CourseRun-optimized.tar.gz
 
 ## Option 4: (Run steps 1 - 3) Export, optimize images, and import back to the platform.
 TBD
@@ -95,9 +122,9 @@ python optimize-course-images.py
 # Directories
 The following folders are used while the application is running.
 - **/logs:** output each course tracking information for the script.
-- **/optimized-courses:** final optimized tar.gz files with `/static` files in JPEG compressed format that can be used when importing into an Open edX platform instance. Files will have `-optimized.tar.gz` at the end (i.e. `course.Org+CourseNumber+CourseRun-optimized.tar.gz`).
-- **/source-courses:** copy courses that need to be optimized here and make sure to name them according to name each tar.gz file according to the Open edX `course_id` naming convention (i.e. `course.Org+CourseNumber+CourseRun.tar.gz`).
+- **/courses-optimized:** final optimized tar.gz files with `/static` files in JPEG compressed format that can be used when importing into an Open edX platform instance. Files will have `-optimized.tar.gz` at the end (i.e. `course.Org+CourseNumber+CourseRun-optimized.tar.gz`).
+- **/courses-sourced:** copy courses that need to be optimized here and make sure to name them according to name each tar.gz file according to the Open edX `course_id` naming convention (i.e. `course.Org+CourseNumber+CourseRun.tar.gz`).
 - **/tmp:** temporary output for an extracted course tar.gz that the script is modifying. Contents will be removed after script completes.
 
 Here are the support Python packages that the main optimize-course-images.py uses.
-- **/utils:** helper methods to handle files, images, json, and tar content for script.
+- **/utils:** helper methods to handle files, images, json, s3, and tar content for script.
