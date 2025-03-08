@@ -7,6 +7,26 @@ import logging
 import os
 import re
 
+def get_value_from_json(json_file_path, key):
+    """
+    Get the value of a specified key from a JSON file.
+
+    :param json_file_path: Path to the JSON file.
+    :param key: The key whose value needs to be retrieved.
+    :return: The value of the specified key, or None if the key is not found.
+    """
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as file:
+            data = json.load(file)
+            return data.get(key)
+    except FileNotFoundError:
+        print(f"File not found: {json_file_path}")
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from file: {json_file_path}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    return None
+
 def delete_key_from_json(file_path, key_to_delete):
     """
     Deletes a key-value pair from a JSON file.
