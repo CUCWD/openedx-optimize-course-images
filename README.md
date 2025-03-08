@@ -12,7 +12,7 @@ Install Imagick before using the Wand python package using the Ubuntu/Debian or 
 
 ## Ubuntu/Debian
 ```
-sudo apt-get install libmagickwand-dev
+sudo apt-get install imagemagick
 ```
 
 ## Mac (Brew Installer)
@@ -95,6 +95,73 @@ After each Imagick option, there is a link to the command line version for addit
     - The script does not upscale these images to 1400px width. This is to ensure that the images like drag and drop are preserved to avoid issues with target zones moving.
 - Convert all images to JPEG format | [-format jpeg](https://imagemagick.org/script/command-line-options.php?#format)
 - Define JPEG DCT method as float for better quality | [-define jpeg:dct-method=float](https://imagemagick.org/script/command-line-options.php?#define)
+- Keep transparent areas as white instead of black
+  - Sets the background color to white, which will be used to fill in transparent areas. | [-background white](https://imagemagick.org/script/command-line-options.php#background)
+  - Set any fully-transparent pixel to the background color, while leaving it fully-transparent. This can make some image file formats, such as PNG, smaller as the RGB values of transparent pixels are more uniform, and thus can compress better. | [-alpha background](https://imagemagick.org/script/command-line-options.php#alpha)
+
+### Verifying log output and Excel image optimization tracking.
+The application keeps track of it's image optimization process to show before and after image optimizations for JPEG and PNG images. Logs files are use to show details of the optimized sizes for outputted JPEG compressed images. 
+
+An Excel `image_optimization_stats.{YYYYMMDD}.{time}.xlsx` file is created to show before and after image sizes on a details worksheet and a summary worksheet showing overall size reduction per course. We output the `Before Size` and `After Size` columns on the details worksheet in `KB, MB` sizes. To help validate that what the application indicates for image reduction please follow these steps.
+
+#### Create two new columns removing the `KB, MB` strings and convert all values to MB size.
+Insert a new column after `Before Resolution` titled `Before Size (MB) Without MB String` with this formula. Here `F2` represents the `Before Resolution` column.
+```
+=IF(RIGHT(F2,2)="KB", LEFT(F2,LEN(F2)-3)/1024, IF(RIGHT(F2,2)="MB", LEFT(F2,LEN(F2)-3)/1, IF(RIGHT(F2,2)="GB", LEFT(F2,LEN(F2)-3)*1024, 0)))
+```
+
+Insert a new column after `After Resolution` titled `After Size (MB) Without MB String`. Here `L2` represents the `After Resolution` column.
+```
+=IF(RIGHT(L2,2)="KB", LEFT(L2,LEN(L2)-3)/1024, IF(RIGHT(L2,2)="MB", LEFT(L2,LEN(L2)-3)/1, IF(RIGHT(L2,2)="GB", LEFT(L2,LEN(L2)-3)*1024, 0)))
+```
+
+#### Validate these MB Excel columns with what's in the courses uploade to S3 as original and -optimized format.
+Extract the *.tar.gz files and open each `course/static` directory in a terminal shell. Execute the commands below for original and -optimized courses to see what the total size is and compare this against the two additional columns above.
+```
+# Before size on disk - check size of images (PNG, JPEG) in the current directory
+du -ch ./*.png ./*.jpg | grep total
+```
+
+```
+# After size on disk - check size of images (JPEG) in the current directory
+du -ch ./*.jpg | grep total
+```
+
+#### Validate the image resolution changes between the original and -optimized format.
+Use the following command to see all JPEG and PNG resolution and sizes in the current directory.
+```
+**# Before Image Optimization** - Identify the image resolutions and sizes in the current directory for both JPEG and PNG images.
+identify *.jpg *.png
+
+Dog-and-Cat.jpg JPEG 640x400 640x400+0+0 8-bit sRGB 34834B 0.000u 0:00.002
+L9_buckets.jpg JPEG 670x330 670x330+0+0 8-bit sRGB 33877B 0.000u 0:00.000
+ProgressPage.jpg JPEG 1400x540 1400x540+0+0 8-bit sRGB 33124B 0.000u 0:00.000
+...
+teacher_to_student.png PNG 320x380 320x380+0+0 8-bit sRGB 7801B 0.000u 0:00.000
+unavailable.png PNG 1201x395 1201x395+0+0 8-bit sRGB 110580B 0.000u 0:00.000
+```
+
+Here is an example for the Iguana (iguana-8084900*) and Butterfly (png-2678397*) changes for the edX Demo course before and after. Notice that the resolution for larger images > 1400 width went down to 1400 width and PNG files were removed.
+
+```
+# Before Image Optimization
+identify iguana* png-2678397*
+
+iguana-8084900@1280x853.jpg JPEG 1280x853 1280x853+0+0 8-bit sRGB 495826B 0.000u 0:00.000
+iguana-8084900@5257x3505.jpg JPEG 5257x3505 5257x3505+0+0 8-bit sRGB 4.28202MiB 0.000u 0:00.000
+png-2678397@1280x851.jpg JPEG 1280x851 1280x851+0+0 8-bit sRGB 176769B 0.000u 0:00.000
+png-2678397@1280x851.png PNG 1280x851 1280x851+0+0 8-bit sRGB 586769B 0.000u 0:00.000
+png-2678397@6016x4000.jpg JPEG 1400x930 1400x930+0+0 8-bit sRGB 176069B 0.000u 0:00.000
+png-2678397@6016x4000.png PNG 6016x4000 6016x4000+0+0 8-bit sRGB 9.02263MiB 0.000u 0:00.000
+
+# After Image Optimization
+identify iguana* png-2678397*
+
+iguana-8084900@1280x853.jpg JPEG 1280x853 1280x853+0+0 8-bit sRGB 488107B 0.000u 0:00.000
+iguana-8084900@5257x3505.jpg JPEG 1400x933 1400x933+0+0 8-bit sRGB 394614B 0.000u 0:00.000
+png-2678397@1280x851.jpg JPEG 1280x851 1280x851+0+0 8-bit sRGB 176769B 0.000u 0:00.000
+png-2678397@6016x4000.jpg JPEG 1400x930 1400x930+0+0 8-bit sRGB 176069B 0.000u 0:00.000
+```
 
 ## Option 3: Import optimized Open edX courses back to the platform.
 
@@ -111,7 +178,7 @@ Here are some examples following the (Organization+CourseNumber+CourseRun) forma
   - course.Org+CourseNumber+CourseRun-optimized.tar.gz
 
 ## Option 4: (Run steps 1 - 3) Export, optimize images, and import back to the platform.
-TBD
+Run steps 1 - 3 together. This is to be used as an automated way to handle exporting, image optimization, then importing back into the platform.
 
 ## Execute Script To Optimized Course Images
 ```

@@ -1,3 +1,7 @@
+"""
+This module contains utility functions to interact with AWS S3.
+"""
+
 import logging
 
 import boto3
