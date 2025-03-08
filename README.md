@@ -21,11 +21,11 @@ brew install imagemagick
 ```
 
 # Installation
-Make sure to install the prerequisites before beginning this step because of the Imagick dependency. 
+Make sure to install the Python package and its prerequisites before beginning this step because of the Imagick dependency. 
 
 ```
-# Install packages in bulk according to the configuration file.
-pip install -r requirements.txt
+# Install Python package and requirements. This package includes a Django management command `delete_course_assets` that will delete assets from the contentstore.
+pip install -e .
 ```
 
 # Running
