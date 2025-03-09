@@ -464,9 +464,17 @@ def main():
                 app_logger.info("//////////////////////////////////////////////////////////////")
                 app_logger.info(f"Step [{command_choice}] Exporting Open edX courses and backup to S3, optimizing course, then importing back to the platform.")
                 app_logger.info("//////////////////////////////////////////////////////////////")
-                export_courses(course_ids)
-                optimize_courses(course_ids)
-                import_courses(course_ids)
+                
+                # Limit the number of courses to optimize at a time to avoid resource exhaustion.
+                for chunk in chunk_courses_to_optimized(course_ids, CHUNK_SIZE):
+                    with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
+                        """
+                        Export courses and backup to S3, optimize images for exported tar gzip Open edX courses, and import optimized Open edX courses back to the platform.
+                        """
+                        export_courses(chunk)
+                        optimize_courses(chunk)
+                        import_courses(chunk)
+
                 app_logger.info(f"[{command_choice}] All courses have been exported, optimized, and imported back to the platform.")
             else:
                 app_logger.error("Invalid command choice.")
