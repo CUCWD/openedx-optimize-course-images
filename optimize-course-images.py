@@ -39,6 +39,9 @@ def combine_and_save_image_optimization_excel_summary(log_path):
 
     COMBINED_WORKBOOK_NAME = f"image_optimization_stats.{APPLICATION_DATE}.{APPLICATION_TIME}.xlsx"
 
+    # ---------------------------------------
+    # Image Optimization Details
+    # ---------------------------------------
     combined_workbook = Workbook()
     combined_sheet = combined_workbook.active
     combined_sheet.title = "Image Optimization Details"
@@ -94,6 +97,9 @@ def combine_and_save_image_optimization_excel_summary(log_path):
         )
     )
 
+    # ---------------------------------------
+    # Image Optimization Summary
+    # ---------------------------------------
     pivot_sheet = combined_workbook.create_sheet(title="Image Optimization Summary")
     pivot_headers = [
         "Course ID", "Count of Deleted From Course", "Count of Optimized",
@@ -187,6 +193,12 @@ def traverse_image_files(course_id, directory_path, course_logger):
     asset_key_strings_to_remove = [] # Keeps track of images that are not used in the course content.
     supported_extensions = ['.png', '.jpeg', '.jpg']
 
+    # Exit early if the `/static` directory does not exist in the course.
+    static_dir = os.path.join(directory_path, "static")
+    if not os.path.exists(static_dir):
+        course_logger.warning(f"The /static directory does not exist in {course_id}.")
+        raise FileNotFoundError(f"The /static directory does not exist in {course_id}.")
+
     # Create a new Excel workbook for the given course.
     workbook = Workbook()
     sheet = workbook.active
@@ -198,7 +210,7 @@ def traverse_image_files(course_id, directory_path, course_logger):
     ])
 
     # Limit the walk to the top-level files in the static directory (ignoring subdirectories)
-    root, _, files = next(os.walk(os.path.join(directory_path, "static")))
+    root, _, files = next(os.walk(static_dir))
     for file in files:
         # Skip hidden files that begin with '.' - macOS
         if file.lower().startswith('.'):
@@ -323,25 +335,31 @@ def process_tar_file(tar_file, log_path, optimized_directory, tmp_destination):
     log_file = os.path.join(log_path, f"{tar_file_name.replace('course.', '')}.log")
     course_logger = utils_logger.setup_logger(log_file, enable_stdout=False)
 
-    course_logger.info("//////////////////////////////////////////////////////////////")
-    course_logger.info(f"Starting new image optimization for {tar_file_name}")
+    course_logger.info(f">>> Optimization courses images for {tar_file_name}")
 
     utils_tar.extract_tar_gz(tar_file, tar_destination)
 
-    course_path = os.path.join(tar_destination, "course")
-    traverse_image_files(
-        tar_file_name.replace('course.', 'course-v1:'), course_path, course_logger
-    )
+    try:
+        # Traverse and optimize images in the exported course.
+        course_path = os.path.join(tar_destination, "course")
+        traverse_image_files(
+            tar_file_name.replace('course.', 'course-v1:'), course_path, course_logger
+        )
 
-    assets_path = os.path.join(course_path, "policies", "assets.json")
-    utils_json.find_and_replace_in_json(assets_path, 'image\/png', 'image/jpeg')
-    utils_json.find_and_replace_in_json(assets_path, "-png\.jpg", ".jpg")
-    utils_json.find_and_replace_in_json(assets_path, "\.png", ".jpg")
-    utils_json.replace_json_keys(assets_path, ".png", ".jpg")
+        # Find and replace image references in the exported course content.
+        assets_path = os.path.join(course_path, "policies", "assets.json")
+        utils_json.find_and_replace_in_json(assets_path, 'image\/png', 'image/jpeg')
+        utils_json.find_and_replace_in_json(assets_path, "-png\.jpg", ".jpg")
+        utils_json.find_and_replace_in_json(assets_path, "\.png", ".jpg")
+        utils_json.replace_json_keys(assets_path, ".png", ".jpg")
 
-    policy_path = utils_json.find_json_file(os.path.join(course_path, "policies"), "policy.json")
-    utils_json.find_and_replace_in_json(policy_path, "\.png", ".jpg")
+        policy_path = utils_json.find_json_file(os.path.join(course_path, "policies"), "policy.json")
+        utils_json.find_and_replace_in_json(policy_path, "\.png", ".jpg")
+    except FileNotFoundError:
+        # Do nothing if no image files are found in the course.
+        pass
 
+    # Create a new tar.gz file with the optimized images even if no images were found.
     optimized_file = f"{tar_file_name}-optimized"
     optimized_file_path = optimized_directory
     utils_tar.create_tar_gz(tar_destination, optimized_file_path, optimized_file)
@@ -353,13 +371,22 @@ def chunk_courses_to_optimized(lst, n):
         yield lst[i:i + n]
 
 def export_courses(course_ids):
-    """Export courses and backup to S3."""
+    """
+    Export courses and backup to S3.
+    Returns a list of exported courses to ensure that remaining tasks to optimize courses and import are not called.
+    """
+    exported_courses = []
+
     for chunk in chunk_courses_to_optimized(course_ids, CHUNK_SIZE):
         with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
-            pool.starmap(utils_openedx.export_course_from_platform, [(course_id,) for course_id in chunk])
+            try:
+                pool.starmap(utils_openedx.export_course_from_platform, [(course_id,) for course_id in chunk])
+                exported_courses.extend(chunk)
+            except (NoCredentialsError, PartialCredentialsError, FileNotFoundError):
+                app_logger.error("Could not call export course %s", chunk)
 
     # Backup SOURCE_DIRECTORY exported courses to S3 as original tar.gz files backup.
-    for course_id in course_ids:
+    for course_id in exported_courses:
         course_id_filename = course_id.replace('course-v1:', '')
         tar_gz_path = os.path.join(SOURCE_DIRECTORY, f'course.{course_id_filename}.tar.gz')
         s3_key = f'openedx-course-backups/openedx-courses/{course_id_filename}/{APPLICATION_DATE}/course.{course_id_filename}.{APPLICATION_DATE}.{APPLICATION_TIME}.tar.gz'
@@ -369,9 +396,27 @@ def export_courses(course_ids):
         except (FileNotFoundError, NoCredentialsError, PartialCredentialsError, Exception):
             # Continue to the next course file on S3 upload error.
             continue
+    
+    return exported_courses
 
 def optimize_courses(course_ids):
     """Optimize images for exported tar gzip Open edX courses."""
+
+    # EXPERIMENTAL:
+    # THIS IS COMMENTED OUT BECAUSE WE ARE NOT DOWNLOADING FROM S3
+    # WE DID THIS TO RECREATE THE EXCEL STATS FILE
+    # -----------------------------------------------------------
+    # Download the tar.gz course files from S3 to the SOURCE_DIRECTORY.
+    # for course_id in course_ids:
+    #     course_id_filename = course_id.replace('course-v1:', '')
+    #     s3_key = f'openedx-course-backups/openedx-courses/{course_id_filename}/{APPLICATION_DATE}/course.{course_id_filename}.{APPLICATION_DATE}.{APPLICATION_TIME}.tar.gz'
+    #     tar_gz_path = os.path.join(SOURCE_DIRECTORY, f'course.{course_id_filename}.tar.gz')
+
+    #     try:
+    #         utils_s3.download_file_from_s3(s3_key, tar_gz_path)
+    #     except (FileNotFoundError, NoCredentialsError, PartialCredentialsError, Exception):
+    #         # Continue to the next course file on S3 download error.
+    #         continue
 
     # Check to see if any source Open edX tar.gz courses exists and process image optimization.
     tar_files = glob.glob(os.path.join(SOURCE_DIRECTORY, "*.tar.gz"))
@@ -382,10 +427,7 @@ def optimize_courses(course_ids):
     # Process tar.gz course files in chunks to limit resources used at a time.
     for chunk in chunk_courses_to_optimized(tar_files, CHUNK_SIZE):
         with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
-            pool.starmap(process_tar_file, [(tar_file, LOG_PATH, OPTIMIZED_DIRECTORY, TMP_DESTINATION) for tar_file in chunk])
-
-    # Create a combined Excel file with all image optimization details.
-    combine_and_save_image_optimization_excel_summary(LOG_PATH)    
+            pool.starmap(process_tar_file, [(tar_file, LOG_PATH, OPTIMIZED_DIRECTORY, TMP_DESTINATION) for tar_file in chunk])   
 
     # Backup OPTIMIZED_DIRECTORY exported courses to S3 as original tar.gz files backup.
     for course_id in course_ids:
@@ -452,8 +494,20 @@ def main():
                 app_logger.info("//////////////////////////////////////////////////////////////")
                 app_logger.info(f"Step [{command_choice}] Optimize images for exported tar gzip Open edX courses.")
                 app_logger.info("//////////////////////////////////////////////////////////////")
-                optimize_courses(course_ids)
+
+                # EXPERIMENTAL:
+                # THIS IS COMMENTED OUT BECAUSE WE ARE NOT DOWNLOADING FROM S3
+                # WE DID THIS TO RECREATE THE EXCEL STATS FILE
+                # -----------------------------------------------------------
+                # Limit the number of courses to optimize at a time to avoid resource exhaustion.
+                # for chunk in chunk_courses_to_optimized(course_ids, CHUNK_SIZE):
+                #     with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
+                #         optimize_courses(chunk)
+                
                 app_logger.info(f"[{command_choice}] All course images have been optimized")
+
+                # Create a combined Excel file with all image optimization details.
+                combine_and_save_image_optimization_excel_summary(LOG_PATH)
             elif command_choice == '3':
                 app_logger.info("//////////////////////////////////////////////////////////////")
                 app_logger.info(f"Step [{command_choice}] Import optimized Open edX courses back to the platform.")
@@ -468,14 +522,18 @@ def main():
                 # Limit the number of courses to optimize at a time to avoid resource exhaustion.
                 for chunk in chunk_courses_to_optimized(course_ids, CHUNK_SIZE):
                     with multiprocessing.Pool(processes=NUM_WORKER_PROCESSES) as pool:
-                        """
-                        Export courses and backup to S3, optimize images for exported tar gzip Open edX courses, and import optimized Open edX courses back to the platform.
-                        """
-                        export_courses(chunk)
-                        optimize_courses(chunk)
-                        import_courses(chunk)
+                        # Export courses and backup to S3, optimize images for exported tar gzip Open edX courses, and import optimized Open edX courses back to the platform.
+                        # Only run the next steps (optimize_courses, import_courses) if the previous step (export_courses) was successful.
+                        # This is to ensure we don't optimize and import courses that were not successfully exported.
+                        exported_courses = export_courses(chunk)
+                        if len(exported_courses) > 0:
+                            optimize_courses(exported_courses)
+                            import_courses(exported_courses)
 
                 app_logger.info(f"[{command_choice}] All courses have been exported, optimized, and imported back to the platform.")
+
+                # Create a combined Excel file with all image optimization details.
+                combine_and_save_image_optimization_excel_summary(LOG_PATH)
             else:
                 app_logger.error("Invalid command choice.")
 

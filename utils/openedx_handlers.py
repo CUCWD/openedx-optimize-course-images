@@ -24,6 +24,8 @@ def export_course_from_platform(course_id):
     CONTAINER_TMP_SOURCE_COURSES = "/tmp/openedx-optimize-course-image/courses-sourced"
     
     try:
+        course_logger.info(f">>> Exporting course {course_id} from the platform.")
+
         # Create temporary course directory using removed 'course-v1:' prefix from course_id
         course_id_filename = course_id.replace('course-v1:', '')
         course_tmp_dir = os.path.join(CONTAINER_TMP_SOURCE_COURSES, 'course.' + course_id_filename, 'course')
@@ -69,10 +71,16 @@ def import_course_to_platform(course_id):
     CONTAINER_TMP_OPTIMIZED_COURSES = "/tmp/openedx-optimize-course-image/courses-optimized"
 
     try:
+        course_logger.info(f">>> Importing course {course_id} to the platform.")
+
         # Extract the tar.gz file to a temporary directory before importing the course.
         course_id_filename = course_id.replace('course-v1:', '')
         optimized_tar_gz_path = os.path.join(OPTIMIZED_DIRECTORY, 'course.' + course_id_filename + '-optimized.tar.gz')
-        utils_tar.extract_tar_gz(optimized_tar_gz_path, OPTIMIZED_DIRECTORY, ignore_clear=True)
+        try:
+            utils_tar.extract_tar_gz(optimized_tar_gz_path, OPTIMIZED_DIRECTORY, ignore_clear=True)
+        except FileNotFoundError:
+            # Exit early if the tar.gz file is not found
+            return
 
         # Import the course using the tutor command
         subprocess_cmd = [
