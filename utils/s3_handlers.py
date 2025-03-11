@@ -11,6 +11,38 @@ from settings import (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME,
                       S3_REGION_NAME, AWS_S3_USE_SSL)
 
 
+def download_file_from_s3(s3_key, file_path):
+    """
+    Download a file from an S3 bucket.
+
+    :param s3_key: S3 key (path) of the file to download.
+    :param file_path: Path where the file will be saved.
+    """
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=S3_REGION_NAME,
+            use_ssl=AWS_S3_USE_SSL  # Use the setting for SSL
+        )
+
+        s3_client.download_file(S3_BUCKET_NAME, s3_key, file_path)
+        logging.info(f"Successfully downloaded s3://{S3_BUCKET_NAME}/{s3_key} to {file_path}")
+
+    except FileNotFoundError as e:
+        logging.error(f"The file {s3_key} was not found.")
+        raise e
+    except NoCredentialsError as e:
+        logging.error("Credentials not available.")
+        raise e
+    except PartialCredentialsError as e:
+        logging.error("Incomplete credentials provided.")
+        raise e
+    except Exception as e:
+        logging.error(f"Failed to download s3://{S3_BUCKET_NAME}/{s3_key} to {file_path}: {e}")
+        raise e
+
 def upload_file_to_s3(file_path, s3_key):
     """
     Upload a file to an S3 bucket.
